@@ -204,6 +204,21 @@ def temp_to_color(temp_f):
         return "ff0000"   # red
 
 # ---------------------------------------------------------
+# UV → COLOR LOGIC
+# ---------------------------------------------------------
+def uv_to_color(uv):
+    if uv <= 2:
+        return "00ff00"   # green
+    elif uv <= 5:
+        return "ffff00"   # yellow
+    elif uv <= 7:
+        return "ff8800"   # orange
+    elif uv <= 10:
+        return "ff0000"   # red
+    else:
+        return "cc00ff"   # purple
+
+# ---------------------------------------------------------
 # WEATHER FETCHING
 # ---------------------------------------------------------
 def get_weather():
@@ -251,15 +266,22 @@ while True:
         if weather_cache:
             temp, rain, uv = weather_cache
             degree = "°"
-            text = f"{temp}{degree}F  Rain:{rain:.0f}%  UV:{uv}"
-            temp_color = temp_to_color(temp)
 
-            print(f"[WX] Displaying weather: {text}")
+            temp_color = temp_to_color(temp)
+            uv_color = uv_to_color(uv)
+
+            multi_color_text = (
+                f"{temp}{degree}F|{temp_color}, "
+                f"Rain:{rain:.0f}%|{config['text_color']}, "
+                f"UV:{uv}|{uv_color}"
+            )
+
+            print(f"[WX] Displaying weather: {multi_color_text}")
+
             client.send_text(
-                text,
+                multi_color_text,
                 animation=config["animation_type"],
-                speed=config["animation_speed"],
-                color=temp_color
+                speed=config["animation_speed"]
             )
 
         time.sleep(config["weather_duration"])
