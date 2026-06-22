@@ -42,7 +42,9 @@ DEFAULT_CONFIG = {
     "animation_type": 0,
     "animation_speed": 0,
     "ble_address": None,
-    "led_sign_password": ""
+    "led_sign_password": "",
+    "weather_duration": 10,
+    "clock_duration": 10
 }
 
 def load_config():
@@ -179,6 +181,16 @@ client.set_brightness(config["brightness"])
 print(f"[BRI] Brightness set to {config['brightness']}")
 
 # ---------------------------------------------------------
+# TIME SYNC
+# ---------------------------------------------------------
+def sync_time_to_sign(client):
+    try:
+        client.set_time()
+        print("[TIME] Time sync sent")
+    except Exception:
+        print("[WARN] Time sync failed")
+
+# ---------------------------------------------------------
 # TEMP → COLOR LOGIC
 # ---------------------------------------------------------
 def temp_to_color(temp_f):
@@ -216,37 +228,49 @@ def get_weather():
         return None
 
 # ---------------------------------------------------------
-# MAIN LOOP
+# MAIN LOOP — ROTATE WEATHER + CLOCK
 # ---------------------------------------------------------
-last_display = None
+last_weather_poll = 0
+weather_cache = None
 
 while True:
     try:
         client, reconnected = ensure_ble_connected(client, BLE_ADDRESS)
 
-        weather = get_weather()
-        if not weather:
-            time.sleep(config["poll_interval"])
-            continue
+        # Sync time every 10 minutes
+        if int(time.time()) % 600 < 2:
+            sync_time_to_sign(client)
 
-        temp, rain, uv = weather
+        # Poll weather only every poll_interval
+        now = time.time()
+        if now - last_weather_poll >= config["poll_interval"]:
+            weather_cache = get_weather()
+            last_weather_poll = now
 
-        degree = "°"
-        text = f"{temp}{degree}F  Rain:{rain:.0f}%  UV:{uv}"
+        # WEATHER DISPLAY
+        if weather_cache:
+            temp, rain, uv = weather_cache
+            degree = "°"
+            text = f"{temp}{degree}F  Rain:{rain:.0f}%  UV:{uv}"
+            temp_color = temp_to_color(temp)
 
-        temp_color = temp_to_color(temp)
-
-        if text != last_display:
-            print(f"[WX] Updating display: {text}  (color {temp_color})")
+            print(f"[WX] Displaying weather: {text}")
             client.send_text(
                 text,
                 animation=config["animation_type"],
                 speed=config["animation_speed"],
                 color=temp_color
             )
-            last_display = text
+
+        time.sleep(config["weather_duration"])
+
+        # CLOCK DISPLAY
+        print("[TIME] Displaying clock")
+        sync_time_to_sign(client)
+        client.set_clock_mode(style=6, show_date=False, format_24=False)
+
+        time.sleep(config["clock_duration"])
 
     except Exception as e:
         print(f"[ERR] Error: {e}")
-
-    time.sleep(config["poll_interval"])
+        time.sleep(5)
