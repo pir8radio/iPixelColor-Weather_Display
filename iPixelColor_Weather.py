@@ -4,7 +4,6 @@ import json
 import os
 import subprocess
 import re
-import requests
 from datetime import datetime
 
 # ---------------------------------------------------------
@@ -23,7 +22,8 @@ def ensure_module(name):
         except Exception as e:
             print(f'[ERR] Failed to install module "{name}": {e}')
             sys.exit(1)
-
+            
+requests = ensure_module("requests")
 pypixelcolor = ensure_module("pypixelcolor")
 from pypixelcolor.client import Client
 
