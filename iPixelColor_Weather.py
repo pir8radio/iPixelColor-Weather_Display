@@ -6,30 +6,20 @@ import subprocess
 import re
 from datetime import datetime
 
-# ---------------------------------------------------------
-# AUTO-INSTALL ANY MISSING MODULES
-# ---------------------------------------------------------
 def ensure_module(name):
     try:
         return __import__(name)
     except ImportError:
-        print(f'\n[WARN] Missing module "{name}". Installing...\n')
+        print(f"[WARN] Missing module {name}, installing...")
         from subprocess import check_call
-        try:
-            check_call([sys.executable, "-m", "pip", "install", "--user", name])
-            print(f'\n[OK] Module "{name}" installed. Restarting...\n')
-            sys.exit(1)
-        except Exception as e:
-            print(f'[ERR] Failed to install module "{name}": {e}')
-            sys.exit(1)
-            
+        check_call([sys.executable, "-m", "pip", "install", "--user", name])
+        print(f"[INFO] Installed {name}, restart script.")
+        sys.exit(1)
+
 requests = ensure_module("requests")
 pypixelcolor = ensure_module("pypixelcolor")
 from pypixelcolor.client import Client
 
-# ---------------------------------------------------------
-# CONFIGURATION FILE
-# ---------------------------------------------------------
 CONFIG_FILE = "pixelcolor_config.json"
 
 DEFAULT_CONFIG = {
@@ -42,16 +32,15 @@ DEFAULT_CONFIG = {
     "animation_type": 0,
     "animation_speed": 0,
     "ble_address": None,
-    "led_sign_password": "",
     "weather_duration": 10,
     "clock_duration": 10
 }
 
 def load_config():
     if not os.path.exists(CONFIG_FILE):
-        print("\n[SETUP] First-time setup — configure your Weather API.\n")
+        print("[SETUP] First-time setup...")
 
-        api_key = input("Enter OpenWeatherMap API key: ").strip()
+        api_key = input("Enter WeatherAPI key: ").strip()
         lat = input("Enter latitude: ").strip()
         lon = input("Enter longitude: ").strip()
         led_sign_password = input("Enter LED sign password (optional): ").strip()
@@ -63,26 +52,11 @@ def load_config():
         new_cfg["led_sign_password"] = led_sign_password
 
         save_config(new_cfg)
-        print("\n[OK] Configuration saved.\n")
+        print("[INFO] Config saved.")
         return new_cfg
 
-    try:
-        with open(CONFIG_FILE, "r") as f:
-            data = json.load(f)
-    except Exception:
-        save_config(DEFAULT_CONFIG)
-        return DEFAULT_CONFIG
-
-    updated = False
-    for k, v in DEFAULT_CONFIG.items():
-        if k not in data:
-            data[k] = v
-            updated = True
-
-    if updated:
-        save_config(data)
-
-    return data
+    with open(CONFIG_FILE, "r") as f:
+        return json.load(f)
 
 def save_config(cfg):
     with open(CONFIG_FILE, "w") as f:
@@ -90,209 +64,121 @@ def save_config(cfg):
 
 config = load_config()
 
-# ---------------------------------------------------------
-# BLE SCANNING
-# ---------------------------------------------------------
 def run_cli_scan():
-    print("\n[SCAN] Searching for iPixelColor LED signs...\n")
-
-    try:
-        result = subprocess.run(
-            [sys.executable, "-m", "pypixelcolor", "--scan"],
-            capture_output=True,
-            text=True,
-            check=True
-        )
-    except Exception as e:
-        print(f"[ERR] Scanner failed: {e}")
-        sys.exit(1)
-
+    print("[SCAN] Searching for LED signs...")
+    result = subprocess.run(
+        [sys.executable, "-m", "pypixelcolor", "--scan"],
+        capture_output=True,
+        text=True
+    )
     output = result.stdout + result.stderr
     print(output)
 
     devices = re.findall(r"-\s+(.+?)\s+\(([0-9A-F:]{17})\)", output)
-
     if not devices:
-        print("[ERR] No LED signs found.")
+        print("[ERR] No devices found.")
         sys.exit(1)
 
-    print("[DEV] Devices detected:\n")
     for i, (name, addr) in enumerate(devices):
-        print(f"  [{i}] {name} — {addr}")
+        print(f"[{i}] {name} — {addr}")
 
-    print("\nSelect a device number:")
-    while True:
-        choice = input("> ").strip()
-        if choice.isdigit() and int(choice) in range(len(devices)):
-            name, addr = devices[int(choice)]
-            print(f"\n[OK] Selected: {name} ({addr})\n")
-            config["ble_address"] = addr
-            save_config(config)
-            return addr
+    choice = int(input("Select device: "))
+    addr = devices[choice][1]
+    config["ble_address"] = addr
+    save_config(config)
+    return addr
 
-        print("[ERR] Invalid choice. Try again.")
+BLE_ADDRESS = config["ble_address"] or run_cli_scan()
 
-# ---------------------------------------------------------
-# BLE CONNECT + AUTO-RECONNECT
-# ---------------------------------------------------------
-def connect_ble(address):
-    backoff = 1
-    while True:
-        try:
-            client = Client(address=address)
-            client.connect()
-
-            print("[BT] Connected")
-            return client
-
-        except Exception as e:
-            print(f"[WARN] BLE connection failed: {e}")
-            print(f"[WAIT] Retrying in {backoff} seconds...")
-            subprocess.run(["sudo", "rfkill", "block", "bluetooth"], check=True)
-            time.sleep(5)
-            subprocess.run(["sudo", "rfkill", "unblock", "bluetooth"], check=True)
-            time.sleep(backoff)
-            backoff = min(backoff * 2, 60)
-
-def ensure_ble_connected(client, address):
-    try:
-        client.get_device_info()
-        return client, False
-    except Exception:
-        print("[WARN] BLE connection lost — reconnecting...")
-        new_client = connect_ble(address)
-        return new_client, True
-
-# ---------------------------------------------------------
-# GET BLE ADDRESS (SCAN IF FIRST RUN)
-# ---------------------------------------------------------
-BLE_ADDRESS = config["ble_address"]
-
-if not BLE_ADDRESS:
-    BLE_ADDRESS = run_cli_scan()
-
-print(f"[BLE] Using device: {BLE_ADDRESS}")
-
-# ---------------------------------------------------------
-# INITIALIZE CLIENT
-# ---------------------------------------------------------
-client = connect_ble(BLE_ADDRESS)
+print(f"[BLE] Connecting to {BLE_ADDRESS}...")
+client = Client(address=BLE_ADDRESS)
+client.connect()
 client.set_brightness(config["brightness"])
-print(f"[BRI] Brightness set to {config['brightness']}")
+print(f"[INFO] Brightness set to {config['brightness']}")
 
-# ---------------------------------------------------------
-# TIME SYNC
-# ---------------------------------------------------------
-def sync_time_to_sign(client):
+def sync_time_to_sign():
     try:
         client.set_time()
-        print("[TIME] Time sync sent")
-    except Exception:
-        print("[WARN] Time sync failed")
+        print("[TIME] Time synced.")
+    except:
+        print("[WARN] Time sync failed.")
 
-# ---------------------------------------------------------
-# TEMP → COLOR LOGIC
-# ---------------------------------------------------------
 def temp_to_color(temp_f):
-    if temp_f <= 31:
-        return "ffffff"   # white
-    elif temp_f <= 55:
-        return "00aaff"   # blue
-    elif temp_f <= 78:
-        return "ff8800"   # orange
-    else:
-        return "ff0000"   # red
+    if temp_f <= 31: return "ffffff"
+    if temp_f <= 55: return "00aaff"
+    if temp_f <= 78: return "ff8800"
+    return "ff0000"
 
-# ---------------------------------------------------------
-# UV → COLOR LOGIC
-# ---------------------------------------------------------
 def uv_to_color(uv):
-    if uv <= 2:
-        return "00ff00"   # green
-    elif uv <= 5:
-        return "ffff00"   # yellow
-    elif uv <= 7:
-        return "ff8800"   # orange
-    elif uv <= 10:
-        return "ff0000"   # red
-    else:
-        return "cc00ff"   # purple
+    if uv <= 2: return "00ff00"
+    if uv <= 5: return "ffff00"
+    if uv <= 7: return "ff8800"
+    if uv <= 10: return "ff0000"
+    return "cc00ff"
 
-# ---------------------------------------------------------
-# WEATHER FETCHING
-# ---------------------------------------------------------
 def get_weather():
     url = (
-        "https://api.openweathermap.org/data/2.5/onecall?"
-        f"lat={config['weather_lat']}&lon={config['weather_lon']}"
-        f"&appid={config['weather_api_key']}&units=imperial"
+        "https://api.weatherapi.com/v1/current.json?"
+        f"key={config['weather_api_key']}"
+        f"&q={config['weather_lat']},{config['weather_lon']}"
+        "&aqi=no"
     )
+    print("[INFO] Fetching weather...")
+    r = requests.get(url, timeout=10)
+    data = r.json()
+    current = data["current"]
+    return round(current["temp_f"]), current.get("chance_of_rain", 0), current.get("uv", 0)
 
-    try:
-        r = requests.get(url, timeout=10)
-        data = r.json()
-
-        temp = round(data["current"]["temp"])
-        rain = data["hourly"][0].get("pop", 0) * 100
-        uv = data["current"].get("uvi", 0)
-
-        return temp, rain, uv
-
-    except Exception as e:
-        print(f"[ERR] Weather API error: {e}")
-        return None
-
-# ---------------------------------------------------------
-# MAIN LOOP — ROTATE WEATHER + CLOCK
-# ---------------------------------------------------------
 last_weather_poll = 0
 weather_cache = None
 
 while True:
-    try:
-        client, reconnected = ensure_ble_connected(client, BLE_ADDRESS)
+    now = time.time()
 
-        # Sync time every 10 minutes
-        if int(time.time()) % 600 < 2:
-            sync_time_to_sign(client)
-
-        # Poll weather only every poll_interval
-        now = time.time()
-        if now - last_weather_poll >= config["poll_interval"]:
+    # Poll weather
+    if now - last_weather_poll >= config["poll_interval"]:
+        try:
             weather_cache = get_weather()
-            last_weather_poll = now
+            print(f"[WX] Weather updated: {weather_cache}")
+        except Exception as e:
+            print(f"[ERR] Weather fetch failed: {e}")
+        last_weather_poll = now
 
-        # WEATHER DISPLAY
-        if weather_cache:
-            temp, rain, uv = weather_cache
-            degree = "°"
+    if weather_cache:
+        temp, rain, uv = weather_cache
 
-            temp_color = temp_to_color(temp)
-            uv_color = uv_to_color(uv)
+        # TEMP PAGE
+        print(f"[WX] TEMP: {temp}°F (color {temp_to_color(temp)})")
+        client.send_text(
+            f"{temp}°F",
+            color=temp_to_color(temp),
+            animation=config["animation_type"],
+            speed=config["animation_speed"]
+        )
+        time.sleep(10)
 
-            multi_color_text = (
-                f"{temp}{degree}F|{temp_color}, "
-                f"Rain:{rain:.0f}%|{config['text_color']}, "
-                f"UV:{uv}|{uv_color}"
-            )
+        # RAIN PAGE
+        print(f"[WX] RAIN: Rain: {rain:.0f}% (color {config['text_color']})")
+        client.send_text(
+            f"Rain: {rain:.0f}%",
+            color=config["text_color"],
+            animation=config["animation_type"],
+            speed=config["animation_speed"]
+        )
+        time.sleep(10)
 
-            print(f"[WX] Displaying weather: {multi_color_text}")
+        # UV PAGE
+        print(f"[WX] UV: UV: {uv} (color {uv_to_color(uv)})")
+        client.send_text(
+            f"UV: {uv}",
+            color=uv_to_color(uv),
+            animation=config["animation_type"],
+            speed=config["animation_speed"]
+        )
+        time.sleep(10)
 
-            client.send_text(
-                multi_color_text,
-                animation=config["animation_type"],
-                speed=config["animation_speed"]
-            )
-
-        time.sleep(config["weather_duration"])
-
-        # CLOCK DISPLAY
-        print("[TIME] Displaying clock")
-        sync_time_to_sign(client)
-        client.set_clock_mode(style=6, show_date=False, format_24=False)
-
-        time.sleep(config["clock_duration"])
-
-    except Exception as e:
-        print(f"[ERR] Error: {e}")
-        time.sleep(5)
+    # CLOCK PAGE
+    print("[TIME] Displaying clock...")
+    sync_time_to_sign()
+    client.set_clock_mode(style=6, show_date=False, format_24=False)
+    time.sleep(10)
