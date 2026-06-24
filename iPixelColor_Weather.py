@@ -1,11 +1,19 @@
+# ---------------------------------------------------------
+# https://github.com/pir8radio/iPixelColor-Weather_Display
+# ---------------------------------------------------------
+
 import sys
 import time
 import json
 import os
 import subprocess
 import re
+import platform
 from datetime import datetime
 
+# ---------------------------------------------------------
+# AUTO-INSTALL ANY MISSING MODULES
+# ---------------------------------------------------------
 def ensure_module(name):
     try:
         return __import__(name)
@@ -20,6 +28,9 @@ requests = ensure_module("requests")
 pypixelcolor = ensure_module("pypixelcolor")
 from pypixelcolor.client import Client
 
+# ---------------------------------------------------------
+# CONFIG
+# ---------------------------------------------------------
 CONFIG_FILE = "pixelcolor_config.json"
 
 DEFAULT_CONFIG = {
@@ -28,7 +39,7 @@ DEFAULT_CONFIG = {
     "weather_lon": "-87.0642",
     "poll_interval": 300,
     "text_color": "00aaff",
-    "brightness": 80,
+    "brightness": 80,  # initial brightness, overridden by UV logic
     "animation_type": 0,
     "animation_speed": 0,
     "ble_address": None,
@@ -65,6 +76,12 @@ def save_config(cfg):
 config = load_config()
 
 # ---------------------------------------------------------
+# PLATFORM FLAGS
+# ---------------------------------------------------------
+IS_LINUX = platform.system().lower() == "linux"
+IS_WINDOWS = platform.system().lower() == "windows"
+
+# ---------------------------------------------------------
 # BLE SCAN
 # ---------------------------------------------------------
 def run_cli_scan():
@@ -92,7 +109,7 @@ def run_cli_scan():
     return addr
 
 # ---------------------------------------------------------
-# BLE CONNECT + AUTO-RECONNECT (from Plex script)
+# CROSS-PLATFORM BLE CONNECT + AUTO-RECONNECT
 # ---------------------------------------------------------
 def connect_ble(address):
     backoff = 1
@@ -105,14 +122,20 @@ def connect_ble(address):
 
         except Exception as e:
             print(f"[WARN] BLE connection failed: {e}")
+
+            if IS_LINUX:
+                print("[BT] Linux detected — attempting Bluetooth reset")
+                try:
+                    subprocess.run(["sudo", "rfkill", "block", "bluetooth"], check=False)
+                    time.sleep(2)
+                    subprocess.run(["sudo", "rfkill", "unblock", "bluetooth"], check=False)
+                except Exception:
+                    pass
+
+            if IS_WINDOWS:
+                print("[BT] Windows detected — waiting for device to reappear")
+
             print(f"[WAIT] Retrying in {backoff} seconds...")
-
-            subprocess.run(["sudo", "rfkill", "block", "bluetooth"], check=True)
-            print("[BT] Restarting Bluetooth")
-            time.sleep(5)
-            subprocess.run(["sudo", "rfkill", "unblock", "bluetooth"], check=True)
-            print("[BT] Bluetooth re-enabled")
-
             time.sleep(backoff)
             backoff = min(backoff * 2, 60)
 
@@ -126,7 +149,7 @@ def ensure_ble_connected(client, address):
         return new_client, True
 
 # ---------------------------------------------------------
-# GET BLE ADDRESS
+# INITIAL CONNECT
 # ---------------------------------------------------------
 BLE_ADDRESS = config["ble_address"] or run_cli_scan()
 
@@ -134,17 +157,73 @@ print(f"[BLE] Connecting to {BLE_ADDRESS}...")
 client = connect_ble(BLE_ADDRESS)
 
 client.set_brightness(config["brightness"])
-print(f"[INFO] Brightness set to {config['brightness']}")
+print(f"[INFO] Initial brightness set to {config['brightness']}")
 
 # ---------------------------------------------------------
-# TIME SYNC
+# UV-BASED BRIGHTNESS CONTROL
+# ---------------------------------------------------------
+def brightness_from_uv(uv):
+    if uv < 1:
+        return 10
+    if uv > 10:
+        uv = 10
+    return max(10, min(int(10 + uv * 8), 90))
+
+# ---------------------------------------------------------
+# NON-BLOCKING TIME SYNC
 # ---------------------------------------------------------
 def sync_time_to_sign():
+    global client
+    client, reconnected = ensure_ble_connected(client, BLE_ADDRESS)
+    if reconnected:
+        client.set_brightness(config["brightness"])
+
     try:
-        client.set_time()
-        print("[TIME] Time synced.")
-    except:
-        print("[WARN] Time sync failed.")
+        now = datetime.now()
+        packet = bytes([
+            0x12,
+            now.year - 2000,
+            now.month,
+            now.day,
+            now.hour,
+            now.minute,
+            now.second
+        ])
+
+        client._session._client.write_gatt_char(
+            client._session.write_uuid,
+            packet,
+            response=False
+        )
+
+    except Exception:
+        pass
+
+    print("[TIME] Time sync sent (non-blocking)")
+
+# ---------------------------------------------------------
+# SAFE BLE WRAPPERS
+# ---------------------------------------------------------
+def safe_send_text(text, color, animation, speed):
+    global client
+    client, reconnected = ensure_ble_connected(client, BLE_ADDRESS)
+    if reconnected:
+        client.set_brightness(config["brightness"])
+    try:
+        client.send_text(text, color=color, animation=animation, speed=speed)
+    except Exception as e:
+        print(f"[WARN] send_text failed: {e}")
+
+def safe_clock_mode():
+    global client
+    client, reconnected = ensure_ble_connected(client, BLE_ADDRESS)
+    if reconnected:
+        client.set_brightness(config["brightness"])
+        sync_time_to_sign()
+    try:
+        client.set_clock_mode(style=6, show_date=False, format_24=False)
+    except Exception as e:
+        print(f"[WARN] set_clock_mode failed: {e}")
 
 # ---------------------------------------------------------
 # WEATHER HELPERS
@@ -180,40 +259,10 @@ def get_weather():
 # ---------------------------------------------------------
 last_weather_poll = 0
 weather_cache = None
-last_page = None  # track what was last shown
 
 while True:
-    # Auto-reconnect check
-    client, reconnected = ensure_ble_connected(client, BLE_ADDRESS)
-
-    if reconnected:
-        print("[RECON] Restoring brightness + last page")
-        client.set_brightness(config["brightness"])
-
-        if last_page == "TEMP":
-            client.send_text(f"{temp} F", color=temp_to_color(temp),
-                             animation=config["animation_type"],
-                             speed=config["animation_speed"])
-
-        elif last_page == "RAIN":
-            client.send_text(f"Rain: {rain:.0f}%",
-                             color=config["text_color"],
-                             animation=config["animation_type"],
-                             speed=config["animation_speed"])
-
-        elif last_page == "UV":
-            client.send_text(f"UV: {uv}",
-                             color=uv_to_color(uv),
-                             animation=config["animation_type"],
-                             speed=config["animation_speed"])
-
-        elif last_page == "CLOCK":
-            sync_time_to_sign()
-            client.set_clock_mode(style=6, show_date=False, format_24=False)
-
     now = time.time()
 
-    # Poll weather
     if now - last_weather_poll >= config["poll_interval"]:
         try:
             weather_cache = get_weather()
@@ -225,42 +274,43 @@ while True:
     if weather_cache:
         temp, rain, uv = weather_cache
 
+        # UV-based brightness
+        new_brightness = brightness_from_uv(uv)
+        client.set_brightness(new_brightness)
+        print(f"[BRIGHT] Brightness set to {new_brightness}% based on UV {uv}")
+
         # TEMP PAGE
-        print(f"[WX] TEMP: {temp} F (color {temp_to_color(temp)})")
-        client.send_text(
+        print(f"[WX] TEMP: {temp} F")
+        safe_send_text(
             f"{temp} F",
             color=temp_to_color(temp),
             animation=config["animation_type"],
             speed=config["animation_speed"]
         )
-        last_page = "TEMP"
         time.sleep(config["weather_duration"])
 
         # RAIN PAGE
-        print(f"[WX] RAIN: Rain: {rain:.0f}%")
-        client.send_text(
+        print(f"[WX] RAIN: {rain:.0f}%")
+        safe_send_text(
             f"Rain: {rain:.0f}%",
             color=config["text_color"],
             animation=config["animation_type"],
             speed=config["animation_speed"]
         )
-        last_page = "RAIN"
         time.sleep(config["weather_duration"])
 
         # UV PAGE
         print(f"[WX] UV: {uv}")
-        client.send_text(
+        safe_send_text(
             f"UV: {uv}",
             color=uv_to_color(uv),
             animation=config["animation_type"],
             speed=config["animation_speed"]
         )
-        last_page = "UV"
         time.sleep(config["weather_duration"])
 
     # CLOCK PAGE
     print("[TIME] Displaying clock...")
     sync_time_to_sign()
-    client.set_clock_mode(style=6, show_date=False, format_24=False)
-    last_page = "CLOCK"
+    safe_clock_mode()
     time.sleep(config["clock_duration"])
