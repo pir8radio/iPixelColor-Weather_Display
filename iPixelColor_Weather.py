@@ -37,7 +37,7 @@ DEFAULT_CONFIG = {
     "weather_api_key": "YOUR_API_KEY",
     "weather_lat": "41.6106",
     "weather_lon": "-87.0642",
-    "poll_interval": 300,
+    "poll_interval": 120,
     "text_color": "00aaff",
     "brightness": 80,  # initial brightness, overridden by UV logic
     "animation_type": 0,
