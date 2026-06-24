@@ -218,6 +218,7 @@ def safe_send_text(text, color, animation, speed):
     except Exception as e:
         print(f"[WARN] send_text failed: {e}")
 
+# IMPORTANT: NO safe_ble_call here (prevents hidden time sync)
 def safe_clock_mode():
     global client
     try:
@@ -255,10 +256,13 @@ def get_weather():
     return round(current["temp_f"]), current.get("chance_of_rain", 0), current.get("uv", 0)
 
 # ---------------------------------------------------------
-# MAIN LOOP
+# MAIN LOOP (HOURLY TIME SYNC)
 # ---------------------------------------------------------
 last_weather_poll = 0
 weather_cache = None
+
+last_time_sync = 0
+TIME_SYNC_INTERVAL = 3600  # 1 hour
 
 while True:
     try:
@@ -313,7 +317,12 @@ while True:
 
         # CLOCK PAGE
         print("[TIME] Displaying clock...")
-        sync_time_to_sign()
+
+        # HOURLY TIME SYNC ONLY
+        if now - last_time_sync >= TIME_SYNC_INTERVAL:
+            sync_time_to_sign()
+            last_time_sync = now
+
         safe_clock_mode()
         time.sleep(config["clock_duration"])
 
