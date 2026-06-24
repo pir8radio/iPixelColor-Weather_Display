@@ -220,7 +220,6 @@ def safe_send_text(text, color, animation, speed):
 
 def safe_clock_mode():
     try:
-        sync_time_to_sign()
         safe_ble_call(client.set_clock_mode, style=6, show_date=False, format_24=False)
     except Exception as e:
         print(f"[WARN] set_clock_mode failed: {e}")
@@ -255,7 +254,7 @@ def get_weather():
     return round(current["temp_f"]), current.get("chance_of_rain", 0), current.get("uv", 0)
 
 # ---------------------------------------------------------
-# MAIN LOOP 
+# MAIN LOOP
 # ---------------------------------------------------------
 last_weather_poll = 0
 weather_cache = None
