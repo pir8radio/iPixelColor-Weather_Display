@@ -218,7 +218,6 @@ def safe_send_text(text, color, animation, speed):
     except Exception as e:
         print(f"[WARN] send_text failed: {e}")
 
-# IMPORTANT: NO safe_ble_call here (prevents hidden time sync)
 def safe_clock_mode():
     global client
     try:
