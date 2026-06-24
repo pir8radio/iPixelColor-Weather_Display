@@ -35,8 +35,8 @@ CONFIG_FILE = "pixelcolor_config.json"
 
 DEFAULT_CONFIG = {
     "weather_api_key": "YOUR_API_KEY",
-    "weather_lat": "41.6106",
-    "weather_lon": "-87.0642",
+    "weather_lat": "41.8781",
+    "weather_lon": "-87.6298",
     "poll_interval": 120,
     "text_color": "00aaff",
     "brightness": 80,  # initial brightness, overridden by UV logic
