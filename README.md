@@ -2,6 +2,8 @@
 
 A cross‑platform Python application that turns any iPixelColor LED sign into a live, auto‑updating weather dashboard with UV‑based brightness control, non‑blocking BLE communication, and robust reconnect logic for both Linux and Windows.
 
+A great pool side led display!
+
 ## Features
 
 • Live weather display (temperature, rain chance, UV index)  
