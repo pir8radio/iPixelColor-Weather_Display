@@ -266,9 +266,9 @@ while True:
     if now - last_weather_poll >= config["poll_interval"]:
         try:
             weather_cache = get_weather()
-            print(f"[WX] Weather updated: {weather_cache}")
+            print(f"[INTERNET] Weather updated: {weather_cache}")
         except Exception as e:
-            print(f"[ERR] Weather fetch failed: {e}")
+            print(f"[INTERNET] Weather fetch failed: {e}")
         last_weather_poll = now
 
     if weather_cache:
