@@ -219,8 +219,9 @@ def safe_send_text(text, color, animation, speed):
         print(f"[WARN] send_text failed: {e}")
 
 def safe_clock_mode():
+    global client
     try:
-        safe_ble_call(client.set_clock_mode, style=6, show_date=False, format_24=False)
+        client.set_clock_mode(style=6, show_date=False, format_24=False)
     except Exception as e:
         print(f"[WARN] set_clock_mode failed: {e}")
 
