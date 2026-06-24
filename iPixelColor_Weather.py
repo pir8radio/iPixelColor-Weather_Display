@@ -39,7 +39,7 @@ DEFAULT_CONFIG = {
     "weather_lon": "-87.6298",
     "poll_interval": 120,
     "text_color": "00aaff",
-    "brightness": 80,  # initial brightness, overridden by UV logic
+    "brightness": 80,
     "animation_type": 0,
     "animation_speed": 0,
     "ble_address": None,
@@ -149,6 +149,29 @@ def ensure_ble_connected(client, address):
         return new_client, True
 
 # ---------------------------------------------------------
+# SAFE BLE CALL WRAPPER
+# ---------------------------------------------------------
+def safe_ble_call(func, *args, **kwargs):
+    global client
+    try:
+        client, reconnected = ensure_ble_connected(client, BLE_ADDRESS)
+        if reconnected:
+            try:
+                client.set_brightness(config["brightness"])
+            except Exception:
+                pass
+        return func(*args, **kwargs)
+
+    except Exception as e:
+        print(f"[BLE ERROR] {e}")
+        print("[BLE] Forcing reconnect...")
+        try:
+            client = connect_ble(BLE_ADDRESS)
+        except Exception as e2:
+            print(f"[BLE] Reconnect failed: {e2}")
+        return None
+
+# ---------------------------------------------------------
 # INITIAL CONNECT
 # ---------------------------------------------------------
 BLE_ADDRESS = config["ble_address"] or run_cli_scan()
@@ -156,7 +179,7 @@ BLE_ADDRESS = config["ble_address"] or run_cli_scan()
 print(f"[BLE] Connecting to {BLE_ADDRESS}...")
 client = connect_ble(BLE_ADDRESS)
 
-client.set_brightness(config["brightness"])
+safe_ble_call(client.set_brightness, config["brightness"])
 print(f"[INFO] Initial brightness set to {config['brightness']}")
 
 # ---------------------------------------------------------
@@ -170,58 +193,35 @@ def brightness_from_uv(uv):
     return max(10, min(int(10 + uv * 8), 90))
 
 # ---------------------------------------------------------
-# NON-BLOCKING TIME SYNC
+# TIME SYNC
 # ---------------------------------------------------------
 def sync_time_to_sign():
     global client
-    client, reconnected = ensure_ble_connected(client, BLE_ADDRESS)
-    if reconnected:
-        client.set_brightness(config["brightness"])
-
     try:
-        now = datetime.now()
-        packet = bytes([
-            0x12,
-            now.year - 2000,
-            now.month,
-            now.day,
-            now.hour,
-            now.minute,
-            now.second
-        ])
-
-        client._session._client.write_gatt_char(
-            client._session.write_uuid,
-            packet,
-            response=False
-        )
-
+        client.set_time()
     except Exception:
         pass
-
-    print("[TIME] Time sync sent (non-blocking)")
+    print("[TIME] Time sync sent")
 
 # ---------------------------------------------------------
 # SAFE BLE WRAPPERS
 # ---------------------------------------------------------
 def safe_send_text(text, color, animation, speed):
-    global client
-    client, reconnected = ensure_ble_connected(client, BLE_ADDRESS)
-    if reconnected:
-        client.set_brightness(config["brightness"])
     try:
-        client.send_text(text, color=color, animation=animation, speed=speed)
+        safe_ble_call(
+            client.send_text,
+            text,
+            color=color,
+            animation=animation,
+            speed=speed
+        )
     except Exception as e:
         print(f"[WARN] send_text failed: {e}")
 
 def safe_clock_mode():
-    global client
-    client, reconnected = ensure_ble_connected(client, BLE_ADDRESS)
-    if reconnected:
-        client.set_brightness(config["brightness"])
-        sync_time_to_sign()
     try:
-        client.set_clock_mode(style=6, show_date=False, format_24=False)
+        sync_time_to_sign()
+        safe_ble_call(client.set_clock_mode, style=6, show_date=False, format_24=False)
     except Exception as e:
         print(f"[WARN] set_clock_mode failed: {e}")
 
@@ -255,62 +255,73 @@ def get_weather():
     return round(current["temp_f"]), current.get("chance_of_rain", 0), current.get("uv", 0)
 
 # ---------------------------------------------------------
-# MAIN LOOP
+# MAIN LOOP 
 # ---------------------------------------------------------
 last_weather_poll = 0
 weather_cache = None
 
 while True:
-    now = time.time()
+    try:
+        now = time.time()
 
-    if now - last_weather_poll >= config["poll_interval"]:
+        # WEATHER FETCH
+        if now - last_weather_poll >= config["poll_interval"]:
+            try:
+                weather_cache = get_weather()
+                print(f"[INTERNET] Weather updated: {weather_cache}")
+            except Exception as e:
+                print(f"[INTERNET] Weather fetch failed: {e}")
+            last_weather_poll = now
+
+        if weather_cache:
+            temp, rain, uv = weather_cache
+
+            # BRIGHTNESS
+            new_brightness = brightness_from_uv(uv)
+            safe_ble_call(client.set_brightness, new_brightness)
+            print(f"[BRIGHT] Brightness set to {new_brightness}% based on UV {uv}")
+
+            # TEMP PAGE
+            print(f"[WX] TEMP: {temp} F")
+            safe_send_text(
+                f"{temp} F",
+                color=temp_to_color(temp),
+                animation=config["animation_type"],
+                speed=config["animation_speed"]
+            )
+            time.sleep(config["weather_duration"])
+
+            # RAIN PAGE
+            print(f"[WX] RAIN: {rain:.0f}%")
+            safe_send_text(
+                f"Rain: {rain:.0f}%",
+                color=config["text_color"],
+                animation=config["animation_type"],
+                speed=config["animation_speed"]
+            )
+            time.sleep(config["weather_duration"])
+
+            # UV PAGE
+            print(f"[WX] UV: {uv}")
+            safe_send_text(
+                f"UV: {uv}",
+                color=uv_to_color(uv),
+                animation=config["animation_type"],
+                speed=config["animation_speed"]
+            )
+            time.sleep(config["weather_duration"])
+
+        # CLOCK PAGE
+        print("[TIME] Displaying clock...")
+        sync_time_to_sign()
+        safe_clock_mode()
+        time.sleep(config["clock_duration"])
+
+    except Exception as e:
+        print(f"[FATAL LOOP ERROR] {e}")
+        print("[RECOVERY] Restarting BLE connection...")
         try:
-            weather_cache = get_weather()
-            print(f"[INTERNET] Weather updated: {weather_cache}")
-        except Exception as e:
-            print(f"[INTERNET] Weather fetch failed: {e}")
-        last_weather_poll = now
-
-    if weather_cache:
-        temp, rain, uv = weather_cache
-
-        # UV-based brightness
-        new_brightness = brightness_from_uv(uv)
-        client.set_brightness(new_brightness)
-        print(f"[BRIGHT] Brightness set to {new_brightness}% based on UV {uv}")
-
-        # TEMP PAGE
-        print(f"[WX] TEMP: {temp} F")
-        safe_send_text(
-            f"{temp} F",
-            color=temp_to_color(temp),
-            animation=config["animation_type"],
-            speed=config["animation_speed"]
-        )
-        time.sleep(config["weather_duration"])
-
-        # RAIN PAGE
-        print(f"[WX] RAIN: {rain:.0f}%")
-        safe_send_text(
-            f"Rain: {rain:.0f}%",
-            color=config["text_color"],
-            animation=config["animation_type"],
-            speed=config["animation_speed"]
-        )
-        time.sleep(config["weather_duration"])
-
-        # UV PAGE
-        print(f"[WX] UV: {uv}")
-        safe_send_text(
-            f"UV: {uv}",
-            color=uv_to_color(uv),
-            animation=config["animation_type"],
-            speed=config["animation_speed"]
-        )
-        time.sleep(config["weather_duration"])
-
-    # CLOCK PAGE
-    print("[TIME] Displaying clock...")
-    sync_time_to_sign()
-    safe_clock_mode()
-    time.sleep(config["clock_duration"])
+            client = connect_ble(BLE_ADDRESS)
+        except Exception as e2:
+            print(f"[RECOVERY] BLE reconnect failed: {e2}")
+        time.sleep(1)
