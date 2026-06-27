@@ -38,7 +38,7 @@ UV 10 → 90% brightness
 
 Linear formula:
 
-brightness = 10 + (uv * 8)
+brightness = 10 + (uv * 15)
 
 This keeps the sign bright in daylight and dim at night without schedules.
 
