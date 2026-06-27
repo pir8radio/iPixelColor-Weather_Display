@@ -146,4 +146,4 @@ Pull requests are welcome.
 ## ❤️ Credits
 
 Built by Pir8Radio
-Powered by [PlexAPI](https://github.com/pushingkarmaorg/python-plexapi) + [PyPixelColor](https://github.com/lucagoc/pypixelcolor)
+Powered by [PyPixelColor](https://github.com/lucagoc/pypixelcolor)
