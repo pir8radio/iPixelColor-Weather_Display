@@ -143,6 +143,7 @@ MIT License
 
 Pull requests are welcome.
 
-## Support
+## ❤️ Credits
 
-Open a GitHub Issue or Discussion for help.
+Built by Pir8Radio
+Powered by [PlexAPI](https://github.com/pushingkarmaorg/python-plexapi) + [PyPixelColor](https://github.com/lucagoc/pypixelcolor)
