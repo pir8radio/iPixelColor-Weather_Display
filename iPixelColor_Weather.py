@@ -213,7 +213,8 @@ def safe_send_text(text, color, animation, speed):
             text,
             color=color,
             animation=animation,
-            speed=speed
+            speed=speed,
+            font="VCR_OSD_MONO"
         )
     except Exception as e:
         print(f"[WARN] send_text failed: {e}")
