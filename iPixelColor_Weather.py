@@ -190,7 +190,7 @@ def brightness_from_uv(uv):
         return 10
     if uv > 10:
         uv = 10
-    return max(10, min(int(10 + uv * 8), 90))
+    return max(10, min(int(10 + uv * 15), 99))
 
 # ---------------------------------------------------------
 # TIME SYNC
