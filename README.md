@@ -4,9 +4,13 @@ A cross‑platform Python application that turns any iPixelColor LED sign into a
 
 A great pool side led display!
 
+<img width="1147" height="679" alt="image" src="https://github.com/user-attachments/assets/bc42b97d-1b3d-4704-a7df-f1ddc85306c6" />
+
+
 ## Features
 
 • Live weather display (temperature, rain chance, UV index)  
+• UV index and Temperature change color based on value.
 • UV‑based automatic brightness control  
 • Cross‑platform BLE auto‑reconnect  
 • Non‑blocking time synchronization  
