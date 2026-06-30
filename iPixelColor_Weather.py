@@ -253,7 +253,13 @@ def get_weather():
     r = requests.get(url, timeout=10)
     data = r.json()
     current = data["current"]
-    return round(current["temp_f"]), current.get("chance_of_rain", 0), current.get("uv", 0)
+
+    return (
+        round(current["temp_f"]),
+        current.get("chance_of_rain", 0),
+        current.get("uv", 0),
+        round(current.get("feelslike_f", current["temp_f"]))
+    )
 
 # ---------------------------------------------------------
 # MAIN LOOP (HOURLY TIME SYNC)
@@ -278,7 +284,7 @@ while True:
             last_weather_poll = now
 
         if weather_cache:
-            temp, rain, uv = weather_cache
+            temp, rain, uv, feels_like = weather_cache
 
             # BRIGHTNESS
             new_brightness = brightness_from_uv(uv)
@@ -290,6 +296,16 @@ while True:
             safe_send_text(
                 f"{temp} F",
                 color=temp_to_color(temp),
+                animation=config["animation_type"],
+                speed=config["animation_speed"]
+            )
+            time.sleep(config["weather_duration"])
+
+            # FEELS LIKE PAGE
+            print(f"[WX] FEELS LIKE: {feels_like} F")
+            safe_send_text(
+                f"Feels Like: {feels_like} F",
+                color=temp_to_color(feels_like),
                 animation=config["animation_type"],
                 speed=config["animation_speed"]
             )
