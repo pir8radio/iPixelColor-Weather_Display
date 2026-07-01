@@ -315,9 +315,9 @@ while True:
             time.sleep(config["weather_duration"])
 
             # FEELS LIKE PAGE
-            print(f"[WX] FEELS LIKE: {feels_like} F")
+            print(f"[WX] FEELS: {feels_like} F")
             safe_send_text_small(
-                f"Feels Like: {feels_like} F",
+                f"Feels: {feels_like} F",
                 color=temp_to_color(feels_like),
                 animation=config["animation_type"],
                 speed=config["animation_speed"]
