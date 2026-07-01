@@ -38,13 +38,13 @@ DEFAULT_CONFIG = {
     "weather_lat": "41.8781",
     "weather_lon": "-87.6298",
     "poll_interval": 120,
-    "text_color": "00aaff",
+    "text_color": "ffffff",
     "brightness": 80,
     "animation_type": 0,
-    "animation_speed": 0,
+    "animation_speed": 80,
     "ble_address": None,
     "weather_duration": 5,
-    "alert_duration": 10,
+    "alert_duration": 15,
     "clock_duration": 5
 }
 
@@ -328,7 +328,7 @@ while True:
             print(f"[WX] FORECAST: {short_forecast}")
             safe_send_text(
                 short_forecast,
-                color="ffffff",
+                color=config["text_color"],
                 animation=config["animation_type"],
                 speed=config["animation_speed"]
             )
