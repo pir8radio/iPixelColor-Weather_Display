@@ -315,7 +315,7 @@ while True:
             print(f"[BRIGHT] Brightness set to {new_brightness}% based on UV {uv}")
 
             # TEMP PAGE
-            print(f"[WX] TEMP: {temp} F")
+            print(f"[WX] TEMP: {temp}F")
             safe_send_text(
                 f"{temp}F",
                 color=temp_to_color(temp),
@@ -337,7 +337,7 @@ while True:
             # FEELS LIKE PAGE (small font)
             print(f"[WX] FEELS: {feels_like}F")
             safe_send_text_small(
-                f"Feels: {feels_like} F",
+                f"Feels: {feels_like}F",
                 color=temp_to_color(feels_like),
                 animation=config["animation_type"],
                 speed=config["animation_speed"]
