@@ -40,10 +40,11 @@ DEFAULT_CONFIG = {
     "poll_interval": 120,
     "text_color": "00aaff",
     "brightness": 80,
-    "animation_type": 0,
+    "animation_type": 1,
     "animation_speed": 0,
     "ble_address": None,
     "weather_duration": 5,
+    "alert_duration": 10,
     "clock_duration": 5
 }
 
@@ -255,24 +256,33 @@ def uv_to_color(uv):
     if uv <= 10: return "ff0000"
     return "cc00ff"
 
-def get_weather():
+# ---------------------------------------------------------
+# WEATHER + FORECAST + ALERTS
+# ---------------------------------------------------------
+def get_weather_all():
     url = (
-        "https://api.weatherapi.com/v1/current.json?"
+        "https://api.weatherapi.com/v1/forecast.json?"
         f"key={config['weather_api_key']}"
         f"&q={config['weather_lat']},{config['weather_lon']}"
-        "&aqi=no"
+        "&days=1&alerts=yes"
     )
-    print("[INFO] Fetching weather...")
+
+    print("[INFO] Fetching weather + forecast + alerts...")
     r = requests.get(url, timeout=10)
     data = r.json()
-    current = data["current"]
 
-    return (
-        round(current["temp_f"]),
-        current.get("chance_of_rain", 0),
-        current.get("uv", 0),
-        round(current.get("feelslike_f", current["temp_f"]))
-    )
+    current = data["current"]
+    forecast = data["forecast"]["forecastday"][0]["day"]
+    alerts = data.get("alerts", {}).get("alert", [])
+
+    temp_f = round(current["temp_f"])
+    feels_like = round(current.get("feelslike_f", temp_f))
+    uv = current.get("uv", 0)
+    chance_of_rain = forecast.get("daily_chance_of_rain", 0)
+    short_forecast = forecast["condition"]["text"]
+    active_alert = alerts[0]["headline"] if alerts else None
+
+    return temp_f, feels_like, uv, chance_of_rain, short_forecast, active_alert
 
 # ---------------------------------------------------------
 # MAIN LOOP (HOURLY TIME SYNC)
@@ -290,14 +300,14 @@ while True:
         # WEATHER FETCH
         if now - last_weather_poll >= config["poll_interval"]:
             try:
-                weather_cache = get_weather()
+                weather_cache = get_weather_all()
                 print(f"[INTERNET] Weather updated: {weather_cache}")
             except Exception as e:
                 print(f"[INTERNET] Weather fetch failed: {e}")
             last_weather_poll = now
 
         if weather_cache:
-            temp, rain, uv, feels_like = weather_cache
+            temp, feels_like, uv, rain, short_forecast, active_alert = weather_cache
 
             # BRIGHTNESS
             new_brightness = brightness_from_uv(uv)
@@ -307,15 +317,25 @@ while True:
             # TEMP PAGE
             print(f"[WX] TEMP: {temp} F")
             safe_send_text(
-                f"{temp} F",
+                f"{temp}F",
                 color=temp_to_color(temp),
                 animation=config["animation_type"],
                 speed=config["animation_speed"]
             )
             time.sleep(config["weather_duration"])
 
-            # FEELS LIKE PAGE
-            print(f"[WX] FEELS: {feels_like} F")
+            # SHORT FORECAST PAGE
+            print(f"[WX] FORECAST: {short_forecast}")
+            safe_send_text(
+                short_forecast,
+                color="ffffff",
+                animation=config["animation_type"],
+                speed=config["animation_speed"]
+            )
+            time.sleep(config["weather_duration"])
+
+            # FEELS LIKE PAGE (small font)
+            print(f"[WX] FEELS: {feels_like}F")
             safe_send_text_small(
                 f"Feels: {feels_like} F",
                 color=temp_to_color(feels_like),
@@ -343,6 +363,17 @@ while True:
                 speed=config["animation_speed"]
             )
             time.sleep(config["weather_duration"])
+
+            # ALERT PAGE
+            if active_alert:
+                print(f"[WX] ALERT: {active_alert}")
+                safe_send_text_small(
+                    active_alert,
+                    color="ff0000",
+                    animation=config["animation_type"],
+                    speed=config["animation_speed"]
+                )
+                time.sleep(config["alert_duration"])
 
         # CLOCK PAGE
         print("[TIME] Displaying clock...")
