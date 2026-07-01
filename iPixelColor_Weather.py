@@ -40,7 +40,7 @@ DEFAULT_CONFIG = {
     "poll_interval": 120,
     "text_color": "00aaff",
     "brightness": 80,
-    "animation_type": 1,
+    "animation_type": 0,
     "animation_speed": 0,
     "ble_address": None,
     "weather_duration": 5,
@@ -370,7 +370,7 @@ while True:
                 safe_send_text_small(
                     active_alert,
                     color="ff0000",
-                    animation=config["animation_type"],
+                    animation="1",
                     speed=config["animation_speed"]
                 )
                 time.sleep(config["alert_duration"])
