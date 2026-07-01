@@ -43,8 +43,8 @@ DEFAULT_CONFIG = {
     "animation_type": 0,
     "animation_speed": 0,
     "ble_address": None,
-    "weather_duration": 10,
-    "clock_duration": 10
+    "weather_duration": 5,
+    "clock_duration": 5
 }
 
 def load_config():
